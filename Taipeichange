@@ -1,0 +1,71 @@
+#DailyWebcrawler_TaiwanRatings
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+import pandas as pd
+import time
+
+options = Options()
+options.add_argument("--headless")
+#service = Service("D:\chromedriver.exe")
+#driver = webdriver.Chrome(service=service, options=options)
+driver = webdriver.Chrome( options=options)
+url = "https://www.taiwanratings.com/portal/front/index?lang=zh_TW"
+driver.get(url)
+time.sleep(5)
+
+data=[]  # 用 set 避免重複
+start_time = time.time()
+tables = driver.find_elements(By.CSS_SELECTOR, "table.indexTable")
+#while time.time() - start_time < 60:  # 抓 60 秒
+    
+for table in tables:
+    rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
+    for row in rows:
+        try:
+            title_tag = row.find_element(By.CSS_SELECTOR, "td.p-2 a")
+            date_tag = row.find_element(By.CSS_SELECTOR, "td[width='100px']")
+
+            title = title_tag.text.strip()
+            href = title_tag.get_attribute("href")
+            date = date_tag.text.strip()
+
+            data.append({"title": title, "date": date})
+        except:
+            continue  # 跳過空行或沒有資料的列
+
+
+driver.quit()
+
+# 存成表格  置換換空直
+df = pd.DataFrame(list(data), columns=["date", "title"])
+df.replace('', pd.NA, inplace=True)
+df=df.dropna(subset=['date', 'title'])
+
+
+from sqlalchemy import create_engine
+import pyodbc
+
+
+
+# 4. 從資料庫讀取現有資料，避免插入重複
+conn = pyodbc.connect(f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}')
+existing = pd.read_sql("SELECT date, title FROM dbo.TaiwanRatings", conn)
+
+cursor=conn.cursor()
+cursor.execute("DELETE FROM dbo.TaiwanRatings")
+conn.commit()
+
+
+# 比對，保留新資料
+df = df.merge(existing, on=['date', 'title'], how='left', indicator=True)
+df = df[df['_merge'] == 'left_only'].drop(columns=['_merge'])
+
+df = df.sort_values(by='date', ascending=False)
+
+if not df.empty:
+    df.to_sql('TaiwanRatings', con=engine, schema='dbo', if_exists='append', index=False)
+    print(f"成功插入 {len(df)} 筆新資料")
+else:
+    print("沒有新資料需要插入")
