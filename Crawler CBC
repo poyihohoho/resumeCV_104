@@ -1,0 +1,71 @@
+#DailyWebcrawler_CBC
+
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
+import pandas as pd
+
+url = "https://www.cbc.gov.tw/tw/lp-302-1-1-20.html"
+res = requests.get(url)
+res.encoding = "utf-8"  # 確保中文正常顯示
+soup = BeautifulSoup(res.text, "html.parser")
+
+data = []
+items = soup.select("div.list ul li")
+
+for item in items:
+    time_tag = item.select_one("time")
+    link_tag = item.select_one("a")
+    
+    if time_tag and link_tag:
+        date = time_tag.get_text(strip=True)
+        date_obj=datetime.strptime(date, "%Y-%m-%d")
+        date = date_obj.strftime("%Y/%m/%d")
+        
+        title = link_tag.get_text(strip=True)
+        href = link_tag.get("href")
+        
+        # 補完整網址
+        if href.startswith("/"):
+            href = "https://www.cbc.gov.tw" + href
+        
+        data.append({"date": date, "title": title, "link": href})
+
+# 輸出結果
+for d in data:
+    print(d)
+
+
+
+
+
+# 存成表格  置換換空直
+df = pd.DataFrame(list(data), columns=["date", "title","link"])
+df.replace('', pd.NA, inplace=True)
+df=df.dropna(subset=['date', 'title','link'])
+
+from sqlalchemy import create_engine
+import pyodbc
+
+
+
+# 4. 從資料庫讀取現有資料，避免插入重複
+conn = pyodbc.connect(f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}')
+existing = pd.read_sql("SELECT date, title, link FROM dbo.CBC", conn)
+
+cursor=conn.cursor()
+cursor.execute("DELETE FROM dbo.CBC")
+conn.commit()
+
+
+# 比對，保留新資料
+df = df.merge(existing, on=['date','title','link'], how='left', indicator=True)
+df = df[df['_merge'] == 'left_only'].drop(columns=['_merge'])
+
+df = df.sort_values(by='date', ascending=False)
+
+if not df.empty:
+    df.to_sql('CBC', con=engine, schema='dbo', if_exists='append', index=False)
+    print(f"成功插入 {len(df)} 筆新資料")
+else:
+    print("沒有新資料需要插入")
