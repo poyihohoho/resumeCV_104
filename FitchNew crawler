@@ -49,13 +49,7 @@ import pyodbc
 # 假設 df 是清理後的 DataFrame
 # df = df.dropna(how='any')  # 清理空值
 
-# SQL Server 連線字串
-server = '172.21.118.27'
-database = 'Fitch'
-username = 'sa'
-password = 'aslopin0211'
-connection_string = f"mssql+pyodbc://{username}:{password}@{server}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
-engine = create_engine(connection_string)
+
 
 
 # 4. 從資料庫讀取現有資料，避免插入重複
